@@ -22,8 +22,7 @@ ADMIN_IDS = {8346926801, 6714126072}
 DELETE_AFTER = 3 * 60 * 60
 
 # Supabase PostgreSQL Connection String
-DATABASE_URL = "postgresql://postgres:qwer12334ty2179@db.sliizidimtqvpbotgmhk.supabase.co:5432/postgres"
-
+DATABASE_URL = "postgresql://postgres.sliizidimtqvpbotgmhk:qwer12334ty2179@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 admin_state = {}
 
