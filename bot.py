@@ -24,11 +24,12 @@ DELETE_AFTER = 3 * 60 * 60
 def db_connect():
     return psycopg2.connect(
         dbname="postgres",
-        user="postgres.sliizidimtqvpbotgmhk",
+        user="postgres",
         password="qwer12334ty2179",
-        host="aws-0-ap-south-1.pooler.supabase.com",
-        port=6543
-    )
+        host="db.sliizidimtqvpbotgmhk.supabase.co",
+        port=5432,
+        sslmode="require"
+    ) 
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 admin_state = {}
