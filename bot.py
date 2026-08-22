@@ -1,5 +1,5 @@
 import telebot
-import sqlite3
+import psycopg2
 import threading
 import time
 import os
@@ -18,29 +18,30 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 BOT_TOKEN = "8883200935:AAENl0wiCSeZAZuaSPxtUlRHhGVbgLo106s"
-ADMIN_IDS = { 8346926801, 6714126072 }
+ADMIN_IDS = {8346926801, 6714126072}
 DELETE_AFTER = 3 * 60 * 60
-DB_FILE = "database.db"
+
+# Supabase PostgreSQL Connection String
+DATABASE_URL = "postgresql://postgres:qwer12334ty2179@db.sliizidimtqvpbotgmhk.supabase.co:5432/postgres"
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-db_lock = threading.Lock()
 admin_state = {}
 
 def db_connect():
-    return sqlite3.connect(DB_FILE, check_same_thread=False)
+    return psycopg2.connect(DATABASE_URL)
 
 def setup_database():
     db = db_connect()
     cur = db.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL
         )
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS pdfs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             category_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             file_id TEXT NOT NULL
@@ -48,13 +49,14 @@ def setup_database():
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS delete_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id INTEGER NOT NULL,
-            message_id INTEGER NOT NULL,
-            delete_at INTEGER NOT NULL
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            message_id BIGINT NOT NULL,
+            delete_at BIGINT NOT NULL
         )
     """)
     db.commit()
+    cur.close()
     db.close()
 
 def is_admin(user_id):
@@ -63,8 +65,9 @@ def is_admin(user_id):
 def add_category(name):
     db = db_connect()
     cur = db.cursor()
-    cur.execute("INSERT INTO categories (name) VALUES (?)", (name,))
+    cur.execute("INSERT INTO categories (name) VALUES (%s)", (name,))
     db.commit()
+    cur.close()
     db.close()
 
 def get_categories():
@@ -72,15 +75,17 @@ def get_categories():
     cur = db.cursor()
     cur.execute("SELECT id, name FROM categories ORDER BY id")
     result = cur.fetchall()
+    cur.close()
     db.close()
     return result
 
 def delete_category(category_id):
     db = db_connect()
     cur = db.cursor()
-    cur.execute("DELETE FROM pdfs WHERE category_id = ?", (category_id,))
-    cur.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    cur.execute("DELETE FROM pdfs WHERE category_id = %s", (category_id,))
+    cur.execute("DELETE FROM categories WHERE id = %s", (category_id,))
     db.commit()
+    cur.close()
     db.close()
 
 def add_pdf(category_id, name, file_id):
@@ -88,9 +93,10 @@ def add_pdf(category_id, name, file_id):
     cur = db.cursor()
     cur.execute("""
         INSERT INTO pdfs (category_id, name, file_id)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
     """, (category_id, name, file_id))
     db.commit()
+    cur.close()
     db.close()
 
 def get_pdfs(category_id):
@@ -98,10 +104,11 @@ def get_pdfs(category_id):
     cur = db.cursor()
     cur.execute("""
         SELECT id, name FROM pdfs
-        WHERE category_id = ?
+        WHERE category_id = %s
         ORDER BY id
     """, (category_id,))
     result = cur.fetchall()
+    cur.close()
     db.close()
     return result
 
@@ -110,17 +117,19 @@ def get_pdf(pdf_id):
     cur = db.cursor()
     cur.execute("""
         SELECT id, category_id, name, file_id FROM pdfs
-        WHERE id = ?
+        WHERE id = %s
     """, (pdf_id,))
     result = cur.fetchone()
+    cur.close()
     db.close()
     return result
 
 def delete_pdf(pdf_id):
     db = db_connect()
     cur = db.cursor()
-    cur.execute("DELETE FROM pdfs WHERE id = ?", (pdf_id,))
+    cur.execute("DELETE FROM pdfs WHERE id = %s", (pdf_id,))
     db.commit()
+    cur.close()
     db.close()
 
 def save_delete_message(chat_id, message_id):
@@ -129,22 +138,26 @@ def save_delete_message(chat_id, message_id):
     cur = db.cursor()
     cur.execute("""
         INSERT INTO delete_queue (chat_id, message_id, delete_at)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
     """, (chat_id, message_id, delete_at))
     db.commit()
+    cur.close()
     db.close()
 
 def show_home(chat_id, message_id=None):
     markup = types.InlineKeyboardMarkup(row_width=1)
     categories = get_categories()
+
     for category_id, name in categories:
         markup.add(types.InlineKeyboardButton("📚 " + name, callback_data="cat_" + str(category_id)))
+
     text = (
         "☰ <b>Welcome to NEETWARRIORTEAM</b> ✨\n\n"
         "Welcome to <b>NEETWARRIORTEAM</b>! ❤️\n\n"
         "Tap the button below to access the <b>Study Material</b>. 📚\n\n"
         "⚠️ <b>Important:</b> Please save/download the required PDFs, as all PDF messages will be <b>automatically deleted after 3 hours</b>. ⏳"
     )
+
     if message_id is None:
         bot.send_message(chat_id, text, reply_markup=markup)
     else:
@@ -158,6 +171,7 @@ def show_admin_panel(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("➕ Add Category", callback_data="add_category"))
     markup.add(types.InlineKeyboardButton("📂 Manage Categories", callback_data="manage_categories"))
+
     bot.send_message(
         chat_id,
         "🔐 <b>NEETWARRIORTEAM ADMIN PANEL</b>\n\nChoose an option:",
@@ -184,12 +198,16 @@ def callbacks(call):
     if data.startswith("cat_"):
         category_id = int(data.split("_")[1])
         pdfs = get_pdfs(category_id)
+
         markup = types.InlineKeyboardMarkup(row_width=1)
         for pdf_id, name in pdfs:
             markup.add(types.InlineKeyboardButton("📄 " + name, callback_data="pdf_" + str(pdf_id)))
+
         if not pdfs:
             markup.add(types.InlineKeyboardButton("📭 No PDFs Available", callback_data="nothing"))
+
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="home"))
+
         bot.edit_message_text(
             "📚 <b>Select the PDF you want:</b>",
             call.message.chat.id,
@@ -202,11 +220,14 @@ def callbacks(call):
     if data.startswith("pdf_"):
         pdf_id = int(data.split("_")[1])
         pdf = get_pdf(pdf_id)
+
         if not pdf:
             bot.answer_callback_query(call.id, "❌ PDF not found.", show_alert=True)
             return
+
         pdf_name = pdf[2]
         file_id = pdf[3]
+
         try:
             sent = bot.send_document(
                 call.message.chat.id,
@@ -234,9 +255,12 @@ def callbacks(call):
     if data == "manage_categories":
         categories = get_categories()
         markup = types.InlineKeyboardMarkup(row_width=1)
+
         for category_id, name in categories:
             markup.add(types.InlineKeyboardButton("📂 " + name, callback_data="manage_" + str(category_id)))
+
         markup.add(types.InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_home"))
+
         bot.edit_message_text(
             "📂 <b>Manage Categories</b>\n\nSelect a category:",
             call.message.chat.id,
@@ -258,11 +282,13 @@ def callbacks(call):
             if cid == category_id:
                 category_name = name
                 break
+
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("➕ Add PDF", callback_data="addpdf_" + str(category_id)))
         markup.add(types.InlineKeyboardButton("📄 Manage PDFs", callback_data="viewpdf_" + str(category_id)))
         markup.add(types.InlineKeyboardButton("🗑 Delete Category", callback_data="delcat_" + str(category_id)))
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_categories"))
+
         bot.edit_message_text(
             f"📂 <b>{category_name}</b>\n\nChoose an option:",
             call.message.chat.id,
@@ -282,10 +308,13 @@ def callbacks(call):
     if data.startswith("viewpdf_"):
         category_id = int(data.split("_")[1])
         pdfs = get_pdfs(category_id)
+
         markup = types.InlineKeyboardMarkup(row_width=1)
         for pdf_id, name in pdfs:
             markup.add(types.InlineKeyboardButton("🗑 " + name, callback_data="delpdf_" + str(pdf_id)))
+
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_" + str(category_id)))
+
         text = "📄 <b>No PDFs in this category.</b>" if not pdfs else "📄 <b>Manage PDFs</b>\n\nTap a PDF to delete it:"
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
         bot.answer_callback_query(call.id)
@@ -297,14 +326,17 @@ def callbacks(call):
         if not pdf:
             bot.answer_callback_query(call.id, "PDF not found.", show_alert=True)
             return
+
         category_id = pdf[1]
         delete_pdf(pdf_id)
         bot.answer_callback_query(call.id, "✅ PDF deleted.")
+
         pdfs = get_pdfs(category_id)
         markup = types.InlineKeyboardMarkup(row_width=1)
         for pid, name in pdfs:
             markup.add(types.InlineKeyboardButton("🗑 " + name, callback_data="delpdf_" + str(pid)))
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_" + str(category_id)))
+
         bot.edit_message_text("📄 <b>Manage PDFs</b>", call.message.chat.id, call.message.message_id, reply_markup=markup)
         return
 
@@ -325,6 +357,7 @@ def admin_messages(message):
         return
 
     state = admin_state[user_id]
+
     if state["state"] == "category":
         if message.content_type != "text":
             bot.reply_to(message, "❌ Send the category name as text.")
@@ -333,6 +366,7 @@ def admin_messages(message):
         if not name:
             bot.reply_to(message, "❌ Category name cannot be empty.")
             return
+
         add_category(name)
         del admin_state[user_id]
         bot.send_message(user_id, f"✅ <b>Category added!</b>\n\n📂 {name}")
@@ -343,11 +377,14 @@ def admin_messages(message):
         if message.content_type != "document":
             bot.reply_to(message, "❌ Please send a PDF file.")
             return
+
         document = message.document
         filename = document.file_name or "Unnamed PDF"
+
         if not (document.mime_type == "application/pdf" or filename.lower().endswith(".pdf")):
             bot.reply_to(message, "❌ Only PDF files are allowed.")
             return
+
         add_pdf(state["category_id"], filename, document.file_id)
         del admin_state[user_id]
         bot.send_message(user_id, f"✅ <b>PDF added successfully!</b>\n\n📄 {filename}")
@@ -357,23 +394,29 @@ def admin_messages(message):
 def delete_worker():
     while True:
         now = int(time.time())
-        db = db_connect()
-        cur = db.cursor()
-        cur.execute("SELECT chat_id, message_id FROM delete_queue WHERE delete_at <= ?", (now,))
-        rows = cur.fetchall()
-        for chat_id, message_id in rows:
-            try:
-                bot.delete_message(chat_id, message_id)
-            except Exception as e:
-                print("Delete error:", e)
-            cur.execute("DELETE FROM delete_queue WHERE chat_id = ? AND message_id = ?", (chat_id, message_id))
-        db.commit()
-        db.close()
+        try:
+            db = db_connect()
+            cur = db.cursor()
+            cur.execute("SELECT chat_id, message_id FROM delete_queue WHERE delete_at <= %s", (now,))
+            rows = cur.fetchall()
+
+            for chat_id, message_id in rows:
+                try:
+                    bot.delete_message(chat_id, message_id)
+                except Exception as e:
+                    print("Delete error:", e)
+                cur.execute("DELETE FROM delete_queue WHERE chat_id = %s AND message_id = %s", (chat_id, message_id))
+            db.commit()
+            cur.close()
+            db.close()
+        except Exception as e:
+            print("DB Worker Error:", e)
+
         time.sleep(30)
 
 if __name__ == "__main__":
     setup_database()
     threading.Thread(target=delete_worker, daemon=True).start()
     threading.Thread(target=run_flask, daemon=True).start()
-    print("NEETWARRIORTEAM BOT IS RUNNING")
+    print("NEETWARRIORTEAM BOT IS RUNNING WITH SUPABASE")
     bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
