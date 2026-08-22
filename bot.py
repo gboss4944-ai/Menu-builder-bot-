@@ -2,7 +2,20 @@ import telebot
 import sqlite3
 import threading
 import time
+import os
 from telebot import types
+from flask import Flask
+
+# Dummy web server for Render port check
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 BOT_TOKEN = "8883200935:AAH7o99uLUUKEqDNKXLvbWeHOn3V5HlbBGs"
 ADMIN_IDS = { 8346926801, 6714126072 }
@@ -361,5 +374,6 @@ def delete_worker():
 if __name__ == "__main__":
     setup_database()
     threading.Thread(target=delete_worker, daemon=True).start()
+    threading.Thread(target=run_flask, daemon=True).start()
     print("NEETWARRIORTEAM BOT IS RUNNING")
     bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
