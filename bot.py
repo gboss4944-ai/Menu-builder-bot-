@@ -30,12 +30,16 @@ def db_connect():
         host="aws-0-ap-south-1.pooler.supabase.com",
         port=6543
     )
-    result = urlparse(DATABASE_URL)
+    def db_connect():
     return psycopg2.connect(
-        database=result.path[1:],
-        user=result.username,
-        password=result.password,
-        host=result.hostname,
+        dbname="postgres",
+        user="postgres.sliizidimtqvpbotgmhk",
+        password="qwer12334ty2179",
+        host="aws-0-ap-south-1.pooler.supabase.com",
+        port=6543
+    )
+
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
         port=result.port
     )
 
