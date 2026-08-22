@@ -22,8 +22,7 @@ BOT_TOKEN = "8883200935:AAENl0wiCSeZAZuaSPxtUlRHhGVbgLo106s"
 ADMIN_IDS = {8346926801, 6714126072}
 DELETE_AFTER = 3 * 60 * 60
 
-DATABASE_URL = "postgresql://postgres.sliizidimtqvpbotgmhk:qwer12334ty2179@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
-
+DATABASE_URL = "postgresql://postgres.sliizidimtqvpbotgmhk.aws-0-ap-south-1.pooler.supabase.com:qwer12334ty2179@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
 def db_connect():
     result = urlparse(DATABASE_URL)
     return psycopg2.connect(
