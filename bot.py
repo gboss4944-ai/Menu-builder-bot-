@@ -4,7 +4,7 @@ import threading
 import time
 from telebot import types
 
-BOT_TOKEN = "8883200935:AAF1p5q-MJtVCwdao0OSM5Drvlp212tduRY"
+BOT_TOKEN = "8883200935:AAH7o99uLUUKEqDNKXLvbWeHOn3V5HlbBGs"
 ADMIN_IDS = { 8346926801, 6714126072 }
 DELETE_AFTER = 3 * 60 * 60
 DB_FILE = "database.db"
