@@ -3,6 +3,7 @@ import psycopg2
 import threading
 import time
 import os
+from urllib.parse import urlparse
 from telebot import types
 from flask import Flask
 
@@ -21,9 +22,17 @@ BOT_TOKEN = "8883200935:AAENl0wiCSeZAZuaSPxtUlRHhGVbgLo106s"
 ADMIN_IDS = {8346926801, 6714126072}
 DELETE_AFTER = 3 * 60 * 60
 
-# Supabase PostgreSQL Connection String
-DATABASE_URL = "postgresql://postgres.sliizidimtqvpbotgmhk:qwer12334ty2179%40aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+DATABASE_URL = "postgresql://postgres.sliizidimtqvpbotgmhk:qwer12334ty2179@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+
+def db_connect():
+    result = urlparse(DATABASE_URL)
+    return psycopg2.connect(
+        database=result.path[1:],
+        user=result.username,
+        password=result.password,
+        host=result.hostname,
+        port=result.port
+    )
 admin_state = {}
 
 def db_connect():
