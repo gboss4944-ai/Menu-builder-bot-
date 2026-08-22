@@ -3,7 +3,6 @@ import psycopg2
 import threading
 import time
 import os
-from urllib.parse import urlparse
 from telebot import types
 from flask import Flask
 
@@ -29,18 +28,6 @@ def db_connect():
         password="qwer12334ty2179",
         host="aws-0-ap-south-1.pooler.supabase.com",
         port=6543
-    )
-    def db_connect():
-    return psycopg2.connect(
-        dbname="postgres",
-        user="postgres.sliizidimtqvpbotgmhk",
-        password="qwer12334ty2179",
-        host="aws-0-ap-south-1.pooler.supabase.com",
-        port=6543
-    )
-
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-        port=result.port
     )
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
