@@ -33,10 +33,9 @@ def db_connect():
         host=result.hostname,
         port=result.port
     )
-admin_state = {}
 
-def db_connect():
-    return psycopg2.connect(DATABASE_URL)
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+admin_state = {}
 
 def setup_database():
     db = db_connect()
@@ -157,7 +156,11 @@ def show_home(chat_id, message_id=None):
     categories = get_categories()
 
     for category_id, name in categories:
-        markup.add(types.InlineKeyboardButton("📚 " + name, callback_data="cat_" + str(category_id)))
+        markup.add(
+            types.InlineKeyboardButton(
+                "📚 " + name, callback_data="cat_" + str(category_id)
+            )
+        )
 
     text = (
         "☰ <b>Welcome to NEETWARRIORTEAM</b> ✨\n\n"
@@ -177,50 +180,60 @@ def start(message):
 
 def show_admin_panel(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("➕ Add Category", callback_data="add_category"))
-    markup.add(types.InlineKeyboardButton("📂 Manage Categories", callback_data="manage_categories"))
+    markup.add(
+        types.InlineKeyboardButton("➕ Add Category", callback_data="add_category")
+    )
+    markup.add(
+        types.InlineKeyboardButton(
+            "📂 Manage Categories", callback_data="manage_categories"
+        )
+    )
 
     bot.send_message(
         chat_id,
-        "🔐 <b>NEETWARRIORTEAM ADMIN PANEL</b>\n\nChoose an option:",
-        reply_markup=markup
+        "🔐 <b>NEETWARRIORTEAM ADMIN PANEL</b>\n\nChoose an action below:",
+        reply_markup=markup,
     )
 
 @bot.message_handler(commands=["admin"])
-def admin(message):
+def admin_cmd(message):
     if not is_admin(message.from_user.id):
-        bot.reply_to(message, "❌ <b>Access Denied.</b>")
+        bot.reply_to(message, "❌ You are not authorized.")
         return
     show_admin_panel(message.chat.id)
 
 @bot.callback_query_handler(func=lambda call: True)
-def callbacks(call):
+def callback_handler(call):
+    chat_id = call.message.chat.id
     user_id = call.from_user.id
     data = call.data
 
-    if data.startswith("admin_") or data.startswith("add_") or data.startswith("manage_") or data.startswith("delete_"):
-        if not is_admin(user_id):
-            bot.answer_callback_query(call.id, "❌ Not authorized.", show_alert=True)
-            return
+    if data == "home":
+        show_home(chat_id, call.message.message_id)
+        bot.answer_callback_query(call.id)
+        return
 
     if data.startswith("cat_"):
-        category_id = int(data.split("_")[1])
-        pdfs = get_pdfs(category_id)
+        cat_id = int(data.split("_")[1])
+        pdfs = get_pdfs(cat_id)
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         for pdf_id, name in pdfs:
-            markup.add(types.InlineKeyboardButton("📄 " + name, callback_data="pdf_" + str(pdf_id)))
-
-        if not pdfs:
-            markup.add(types.InlineKeyboardButton("📭 No PDFs Available", callback_data="nothing"))
+            markup.add(
+                types.InlineKeyboardButton(
+                    "📄 " + name, callback_data="pdf_" + str(pdf_id)
+                )
+            )
 
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="home"))
 
+        text = (
+            "📚 <b>Select a Chapter / Material</b>\n\n"
+            "Choose a PDF from below to view/download."
+        )
+
         bot.edit_message_text(
-            "📚 <b>Select the PDF you want:</b>",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=markup
+            text, chat_id, call.message.message_id, reply_markup=markup
         )
         bot.answer_callback_query(call.id)
         return
@@ -229,34 +242,41 @@ def callbacks(call):
         pdf_id = int(data.split("_")[1])
         pdf = get_pdf(pdf_id)
 
-        if not pdf:
-            bot.answer_callback_query(call.id, "❌ PDF not found.", show_alert=True)
-            return
+        if pdf:
+            file_id = pdf[3]
+            name = pdf[2]
 
-        pdf_name = pdf[2]
-        file_id = pdf[3]
-
-        try:
-            sent = bot.send_document(
-                call.message.chat.id,
+            msg = bot.send_document(
+                chat_id,
                 file_id,
-                caption=f"📄 <b>{pdf_name}</b>\n\n⏳ This message will be automatically deleted after 3 hours."
+                caption=(
+                    f"📄 <b>{name}</b>\n\n"
+                    "⚠️ <i>This file will automatically delete in 3 hours.</i>"
+                ),
             )
-            save_delete_message(call.message.chat.id, sent.message_id)
-            bot.answer_callback_query(call.id, "📄 PDF sent!")
-        except Exception as e:
-            print("PDF SEND ERROR:", e)
-            bot.answer_callback_query(call.id, "❌ Could not send PDF.", show_alert=True)
+            save_delete_message(chat_id, msg.message_id)
+            bot.answer_callback_query(call.id, text="Sent!")
+        else:
+            bot.answer_callback_query(call.id, text="PDF not found.")
         return
 
-    if data == "home":
-        show_home(call.message.chat.id, call.message.message_id)
+    if not is_admin(user_id):
+        bot.answer_callback_query(call.id, text="Unauthorized action.")
+        return
+
+    if data == "admin_panel":
+        admin_state.pop(user_id, None)
+        show_admin_panel(chat_id)
         bot.answer_callback_query(call.id)
         return
 
     if data == "add_category":
-        admin_state[user_id] = {"state": "category"}
-        bot.send_message(user_id, "➕ <b>Add Category</b>\n\nSend the category name.")
+        admin_state[user_id] = {"action": "wait_cat_name"}
+        bot.send_message(
+            chat_id,
+            "📌 Send me the name for the new Category:",
+            reply_markup=types.ForceReply(),
+        )
         bot.answer_callback_query(call.id)
         return
 
@@ -264,167 +284,183 @@ def callbacks(call):
         categories = get_categories()
         markup = types.InlineKeyboardMarkup(row_width=1)
 
-        for category_id, name in categories:
-            markup.add(types.InlineKeyboardButton("📂 " + name, callback_data="manage_" + str(category_id)))
+        for cat_id, name in categories:
+            markup.add(
+                types.InlineKeyboardButton(
+                    "⚙️ " + name, callback_data="mcat_" + str(cat_id)
+                )
+            )
 
-        markup.add(types.InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_home"))
-
-        bot.edit_message_text(
-            "📂 <b>Manage Categories</b>\n\nSelect a category:",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=markup
+        markup.add(
+            types.InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")
+        )
+        bot.send_message(
+            chat_id, "📂 Select a category to manage:", reply_markup=markup
         )
         bot.answer_callback_query(call.id)
         return
 
-    if data == "admin_home":
-        show_admin_panel(user_id)
-        bot.answer_callback_query(call.id)
-        return
-
-    if data.startswith("manage_"):
-        category_id = int(data.split("_")[1])
-        category_name = "Category"
-        for cid, name in get_categories():
-            if cid == category_id:
-                category_name = name
-                break
-
+    if data.startswith("mcat_"):
+        cat_id = int(data.split("_")[1])
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("➕ Add PDF", callback_data="addpdf_" + str(category_id)))
-        markup.add(types.InlineKeyboardButton("📄 Manage PDFs", callback_data="viewpdf_" + str(category_id)))
-        markup.add(types.InlineKeyboardButton("🗑 Delete Category", callback_data="delcat_" + str(category_id)))
-        markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_categories"))
 
-        bot.edit_message_text(
-            f"📂 <b>{category_name}</b>\n\nChoose an option:",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=markup
+        markup.add(
+            types.InlineKeyboardButton(
+                "➕ Add PDF", callback_data="addpdf_" + str(cat_id)
+            )
         )
+        markup.add(
+            types.InlineKeyboardButton(
+                "📄 Manage PDFs", callback_data="mpdfs_" + str(cat_id)
+            )
+        )
+        markup.add(
+            types.InlineKeyboardButton(
+                "❌ Delete Category", callback_data="delcat_" + str(cat_id)
+            )
+        )
+        markup.add(
+            types.InlineKeyboardButton("🔙 Back", callback_data="manage_categories")
+        )
+
+        bot.send_message(chat_id, "⚙️ Category Management:", reply_markup=markup)
         bot.answer_callback_query(call.id)
         return
 
     if data.startswith("addpdf_"):
-        category_id = int(data.split("_")[1])
-        admin_state[user_id] = {"state": "pdf", "category_id": category_id}
-        bot.send_message(user_id, "➕ <b>Add PDF</b>\n\nSend the PDF now.\n\nThe original PDF filename will automatically become the button name.")
+        cat_id = int(data.split("_")[1])
+        admin_state[user_id] = {"action": "wait_pdf_name", "cat_id": cat_id}
+        bot.send_message(
+            chat_id,
+            "📌 Send me the display title for this PDF:",
+            reply_markup=types.ForceReply(),
+        )
         bot.answer_callback_query(call.id)
         return
 
-    if data.startswith("viewpdf_"):
-        category_id = int(data.split("_")[1])
-        pdfs = get_pdfs(category_id)
+    if data.startswith("mpdfs_"):
+        cat_id = int(data.split("_")[1])
+        pdfs = get_pdfs(cat_id)
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         for pdf_id, name in pdfs:
-            markup.add(types.InlineKeyboardButton("🗑 " + name, callback_data="delpdf_" + str(pdf_id)))
+            markup.add(
+                types.InlineKeyboardButton(
+                    "❌ Delete " + name, callback_data="delpdf_" + str(pdf_id)
+                )
+            )
 
-        markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_" + str(category_id)))
+        markup.add(
+            types.InlineKeyboardButton("🔙 Back", callback_data="mcat_" + str(cat_id))
+        )
+        bot.send_message(
+            chat_id, "📄 Select a PDF to delete:", reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+        return
 
-        text = "📄 <b>No PDFs in this category.</b>" if not pdfs else "📄 <b>Manage PDFs</b>\n\nTap a PDF to delete it:"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+    if data.startswith("delcat_"):
+        cat_id = int(data.split("_")[1])
+        delete_category(cat_id)
+        bot.send_message(chat_id, "✅ Category and its PDFs deleted!")
+        show_admin_panel(chat_id)
         bot.answer_callback_query(call.id)
         return
 
     if data.startswith("delpdf_"):
         pdf_id = int(data.split("_")[1])
-        pdf = get_pdf(pdf_id)
-        if not pdf:
-            bot.answer_callback_query(call.id, "PDF not found.", show_alert=True)
-            return
-
-        category_id = pdf[1]
         delete_pdf(pdf_id)
-        bot.answer_callback_query(call.id, "✅ PDF deleted.")
-
-        pdfs = get_pdfs(category_id)
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        for pid, name in pdfs:
-            markup.add(types.InlineKeyboardButton("🗑 " + name, callback_data="delpdf_" + str(pid)))
-        markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="manage_" + str(category_id)))
-
-        bot.edit_message_text("📄 <b>Manage PDFs</b>", call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.send_message(chat_id, "✅ PDF deleted successfully!")
+        show_admin_panel(chat_id)
+        bot.answer_callback_query(call.id)
         return
 
-    if data.startswith("delcat_"):
-        category_id = int(data.split("_")[1])
-        delete_category(category_id)
-        bot.answer_callback_query(call.id, "✅ Category deleted.")
-        show_admin_panel(user_id)
-        return
-
-    if data == "nothing":
-        bot.answer_callback_query(call.id, "Nothing available.")
-
-@bot.message_handler(content_types=["text", "document"])
-def admin_messages(message):
+@bot.message_handler(
+    content_types=["text", "document"],
+    func=lambda msg: msg.from_user.id in admin_state,
+)
+def handle_admin_input(message):
     user_id = message.from_user.id
-    if not is_admin(user_id) or user_id not in admin_state:
+    state = admin_state.get(user_id)
+
+    if not state:
         return
 
-    state = admin_state[user_id]
+    action = state.get("action")
 
-    if state["state"] == "category":
-        if message.content_type != "text":
-            bot.reply_to(message, "❌ Send the category name as text.")
-            return
-        name = message.text.strip()
-        if not name:
-            bot.reply_to(message, "❌ Category name cannot be empty.")
-            return
+    if action == "wait_cat_name":
+        if message.text:
+            add_category(message.text.strip())
+            bot.reply_to(
+                message, f"✅ Category '<b>{message.text.strip()}</b>' added!"
+            )
+            admin_state.pop(user_id, None)
+            show_admin_panel(message.chat.id)
+        else:
+            bot.reply_to(message, "❌ Please send a text name.")
 
-        add_category(name)
-        del admin_state[user_id]
-        bot.send_message(user_id, f"✅ <b>Category added!</b>\n\n📂 {name}")
-        show_admin_panel(user_id)
-        return
+    elif action == "wait_pdf_name":
+        if message.text:
+            admin_state[user_id] = {
+                "action": "wait_pdf_file",
+                "cat_id": state["cat_id"],
+                "pdf_name": message.text.strip(),
+            }
+            bot.reply_to(
+                message,
+                f"✅ Title saved as '<b>{message.text.strip()}</b>'. Now send/forward the PDF document:",
+            )
+        else:
+            bot.reply_to(message, "❌ Please send a valid text title.")
 
-    if state["state"] == "pdf":
-        if message.content_type != "document":
-            bot.reply_to(message, "❌ Please send a PDF file.")
-            return
+    elif action == "wait_pdf_file":
+        if message.document:
+            file_id = message.document.file_id
+            cat_id = state["cat_id"]
+            pdf_name = state["pdf_name"]
 
-        document = message.document
-        filename = document.file_name or "Unnamed PDF"
+            add_pdf(cat_id, pdf_name, file_id)
+            bot.reply_to(
+                message,
+                f"🎉 PDF '<b>{pdf_name}</b>' uploaded and saved successfully!",
+            )
+            admin_state.pop(user_id, None)
+            show_admin_panel(message.chat.id)
+        else:
+            bot.reply_to(
+                message, "❌ That was not a document! Please send/forward a PDF file."
+            )
 
-        if not (document.mime_type == "application/pdf" or filename.lower().endswith(".pdf")):
-            bot.reply_to(message, "❌ Only PDF files are allowed.")
-            return
-
-        add_pdf(state["category_id"], filename, document.file_id)
-        del admin_state[user_id]
-        bot.send_message(user_id, f"✅ <b>PDF added successfully!</b>\n\n📄 {filename}")
-        show_admin_panel(user_id)
-        return
-
-def delete_worker():
+def auto_deleter():
     while True:
-        now = int(time.time())
         try:
+            now = int(time.time())
             db = db_connect()
             cur = db.cursor()
-            cur.execute("SELECT chat_id, message_id FROM delete_queue WHERE delete_at <= %s", (now,))
+            cur.execute(
+                "SELECT id, chat_id, message_id FROM delete_queue WHERE delete_at <= %s",
+                (now,),
+            )
             rows = cur.fetchall()
 
-            for chat_id, message_id in rows:
+            for row_id, chat_id, message_id in rows:
                 try:
                     bot.delete_message(chat_id, message_id)
                 except Exception as e:
-                    print("Delete error:", e)
-                cur.execute("DELETE FROM delete_queue WHERE chat_id = %s AND message_id = %s", (chat_id, message_id))
-            db.commit()
+                    pass
+                cur.execute("DELETE FROM delete_queue WHERE id = %s", (row_id,))
+                db.commit()
+
             cur.close()
             db.close()
         except Exception as e:
-            print("DB Worker Error:", e)
-
+            pass
         time.sleep(30)
 
 if __name__ == "__main__":
     setup_database()
-    threading.Thread(target=delete_worker, daemon=True).start()
+
     threading.Thread(target=run_flask, daemon=True).start()
-    print("NEETWARRIORTEAM BOT IS RUNNING WITH SUPABASE")
-    bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+    threading.Thread(target=auto_deleter, daemon=True).start()
+
+    bot.infinity_polling(skip_pending=True)
