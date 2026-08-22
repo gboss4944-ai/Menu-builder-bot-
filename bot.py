@@ -17,7 +17,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-BOT_TOKEN = "8883200935:AAH7o99uLUUKEqDNKXLvbWeHOn3V5HlbBGs"
+BOT_TOKEN = "8883200935:AAENl0wiCSeZAZuaSPxtUlRHhGVbgLo106s"
 ADMIN_IDS = { 8346926801, 6714126072 }
 DELETE_AFTER = 3 * 60 * 60
 DB_FILE = "database.db"
